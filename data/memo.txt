@@ -1,0 +1,14 @@
+
+
+ffmpeg -framerate 25 -video_size 120x120 -i /dev/video0 -vcodec mpeg4 x.avi
+ffmpeg -i x.avi -vcodec png a_1%06d.png
+ffmpeg -i x.avi -vcodec png png/a_1%06d.png
+ffmpeg -i x.avi -vcodec png png/a_1%06d.png
+ffmpeg -i x.avi -vcodec png png/a_1%06d.png
+ffmpeg -i test.avi -vcodec png png/a_1%06d.png
+ffmpeg -f v4l2 -framerate 25 -video_size 96x96 -i /dev/video0 output.jpg
+ffmpeg -f v4l2 -framerate 25 -video_size 96x96 -i /dev/video0 output.jpg
+ffmpeg -f v4l2 -framerate 25 -video_size 96x96 -i /dev/video0 output.mkv
+ffmpeg -f v4l2 -framerate 25 -video_size 96x96 -i /dev/video0 output.mkv
+ffmpeg -f v4l2 -framerate 25 -video_size 96x96 -i /dev/video0 output.mkv
+
