@@ -120,12 +120,14 @@ void display_photo(uint8_t * data, size_t len, uint32_t w, uint32_t h){
 
   ei_impulse_result_t result = { 0 };
 
-  // EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
+  EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
+  Serial.printf("EI_IMPULSE_ERROR: %d\n", err);
+  Serial.printf("bounding_boxes_count: %d\n", result.bounding_boxes_count);
 
   char text[8];
   //tft.drawNumber(detector.getPersonScore(), 100, 100);
-  //sprintf(text, "%d : %d", err, result.bounding_boxes_count);
-  sprintf(text, "%d : %d", 0, 0);
+  sprintf(text, "%d : %d", err, result.bounding_boxes_count);
+  //sprintf(text, "%d : %d", 0, 0);
   tft.setCursor(0, 121);
   tft.setTextSize(1);
   tft.setTextColor(ST77XX_YELLOW);
