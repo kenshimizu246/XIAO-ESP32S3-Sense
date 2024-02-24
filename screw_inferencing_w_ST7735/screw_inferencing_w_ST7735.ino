@@ -63,14 +63,14 @@ void capture_photo() {
     Serial.println("wrong size!");
     return;
   }
-  // for(uint32_t i = 0; i < size; i++){
-  //   snapshot_buf[i] = fb->buf[i];
-  // }
+
   memcpy(snapshot_buf, fb->buf, size);
 
   // Release image buffer
   esp_camera_fb_return(fb);
+}
 
+void inferencing(){
   ei::signal_t signal;
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT;
   signal.get_data = &ei_camera_get_data;
@@ -239,6 +239,7 @@ void loop() {
     Serial.print("\nPicture Capture Command is sent...");
     Serial.println(imageCount);
     
+    // allocation must be before capture_photo because it copys picture into the snapshot_buf.
     snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
     if(snapshot_buf == nullptr) {
         ei_printf("ERR: Failed to allocate snapshot buffer!\n");
@@ -247,6 +248,9 @@ void loop() {
 
     capture_photo();
     Serial.println("capture_photo()");
+
+    inferencing();
+    Serial.println("inferencing()");
 
     free(snapshot_buf);
     imageCount++;
