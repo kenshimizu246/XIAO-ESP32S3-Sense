@@ -23,10 +23,9 @@
 
 #define BTN_CAPTURE 4
 
-/* Constant defines -------------------------------------------------------- */
 #define EI_CAMERA_RAW_FRAME_BUFFER_COLS           96
 #define EI_CAMERA_RAW_FRAME_BUFFER_ROWS           96
-#define EI_CAMERA_FRAME_BYTE_SIZE                 3
+#define EI_CAMERA_FRAME_BYTE_SIZE                 1
 
 // For 1.44" and 1.8" TFT with ST7735 use:
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
@@ -48,7 +47,7 @@ uint8_t *snapshot_buf; //points to the output of the capture
 // capure and display photo
 void capture_photo() {
   
-  // tft.fillScreen(ST77XX_BLACK);
+  tft.fillScreen(ST77XX_BLACK);
   
   // Take a photo
   camera_fb_t *fb = esp_camera_fb_get();
@@ -56,66 +55,22 @@ void capture_photo() {
     Serial.println("Failed to get camera frame buffer");
     return;
   }
+  
+  display_photo(fb->buf, fb->len, imageWidth, imageHeight);
 
-  bool converted = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, snapshot_buf);
+  uint32_t size = EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS;
+  if(fb->len != size){
+    Serial.println("wrong size!");
+    return;
+  }
+  // for(uint32_t i = 0; i < size; i++){
+  //   snapshot_buf[i] = fb->buf[i];
+  // }
+  memcpy(snapshot_buf, fb->buf, size);
 
-  display_photo(snapshot_buf, imageWidth * imageHeight * 3, imageWidth, imageHeight);
-      
   // Release image buffer
   esp_camera_fb_return(fb);
 
-  //delay(1000);
-
-  Serial.println("Photo saved to file");
-}
-
-static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr)
-{
-    // we already have a RGB888 buffer, so recalculate offset into pixel index
-    size_t pixel_ix = offset * 3;
-    size_t pixels_left = length;
-    size_t out_ptr_ix = 0;
-
-    while (pixels_left != 0) {
-        out_ptr[out_ptr_ix] = (snapshot_buf[pixel_ix] << 16) + (snapshot_buf[pixel_ix + 1] << 8) + snapshot_buf[pixel_ix + 2];
-
-        // go to the next pixel
-        out_ptr_ix++;
-        pixel_ix+=3;
-        pixels_left--;
-    }
-    // and done!
-    return 0;
-}
-
-// display
-void display_photo(uint8_t * data, size_t len, uint32_t w, uint32_t h){
-  Serial.printf("data len: %d\n", len);
-
-  // b1111100000000000 -> 0xF800 -> 63488
-  // b0000011111100000 -> 0x07E0 -> 2016
-  // b0000000000011111 -> 0x001F -> 31
-  // b1111111111111111 -> 0xFFFF -> 65535
-  // b00111111 -> 0x003F
-  // b00011111 -> 0x001F
-  uint32_t k, j;
-  uint16_t color = 0;
-  uint8_t r, g, b;
-  tft.startWrite();
-
-  // PIXFORMAT_RGB888
-  for(uint32_t y = 0; y < h; y++){
-    for(uint32_t x = 0; x < w; x++){
-      k = (y * w * 3) + x * 3;
-      color = (data[k] << 8) & 0xF800;
-      color |= ((data[k+1] << 5) & 0x07E0);
-      color |= ((data[k+2] >> 3) & 0x001F);
-      tft.writePixel(x, y, color);
-    }
-  }
-  tft.endWrite();
-
-/*
   ei::signal_t signal;
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT;
   signal.get_data = &ei_camera_get_data;
@@ -123,27 +78,63 @@ void display_photo(uint8_t * data, size_t len, uint32_t w, uint32_t h){
   ei_impulse_result_t result = { 0 };
 
   EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
-  Serial.printf("EI_IMPULSE_ERROR: %d\n", err);
-  Serial.printf("bounding_boxes_count: %d\n", result.bounding_boxes_count);
+  if (err != EI_IMPULSE_OK) {
+      ei_printf("ERR: Failed to run classifier (%d)\n", err);
+      return;
+  }
+  
+  ei_printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n",
+            result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
-  char text[24];
-  //tft.drawNumber(detector.getPersonScore(), 100, 100);
-  sprintf(text, "res: %d : %d", err, result.bounding_boxes_count);
-  Serial.printf("%s\n", text);
-  //sprintf(text, "%d : %d", 0, 0);
-  tft.setCursor(0, 121);
-  tft.setTextSize(1);
-  tft.setTextColor(ST77XX_YELLOW);
-  tft.setTextWrap(true);
-  tft.print(text);
-*/
+  bool bb_found = result.bounding_boxes[0].value > 0;
+  for (size_t ix = 0; ix < result.bounding_boxes_count; ix++) {
+      auto bb = result.bounding_boxes[ix];
+      if (bb.value == 0) {
+          continue;
+      }
+      ei_printf("    %s (%f) [ x: %u, y: %u, width: %u, height: %u ]\n", bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
+      char text[24];
+      sprintf(text, "%s %.02f", bb.label, bb.value);
+      tft.setCursor(0,0);
+      tft.print(text);
+      tft.drawCircle(bb.x, bb.y, 5, ST77XX_YELLOW);
+  }
+  if (!bb_found) {
+      ei_printf("    No objects found\n");
+  }
 
-  //delay(10000);
-    
-  // Serial.printf("r: %X\n", r);
-  // Serial.printf("g: %X\n", g);
-  // Serial.printf("b: %X\n", b);
-  // Serial.printf("color: %X\n", color);
+  Serial.println("Photo saved to file");
+}
+
+// display
+void display_photo(uint8_t * data, size_t len, uint32_t w, uint32_t h){
+  Serial.printf("data len: %d\n", len);
+
+  buff_size = imageWidth * imageHeight * 2;
+  buff = (uint16_t *)malloc(buff_size);
+
+  // b1111100000000000 -> 0xF800 -> 63488
+  // b0000011111100000 -> 0x07E0 -> 2016
+  // b0000000000011111 -> 0x001F -> 31
+  // b1111111111111111 -> 0xFFFF -> 65535
+  uint32_t x = 0, y = 0, k, j = 0;
+  uint16_t color = 0;
+  uint16_t c, r, g, b;
+  for(uint32_t y = 0; y < h; y++){
+    for(uint32_t x = 0; x < w; x++){
+      k = (y * w) + x;
+      b = (data[k] >> 3) & 0x1F;
+      g = b << (5 + 1); // 5 + 1 because green has 6 bits instead of others like 5 bits.
+      r = b << (5 + 6);
+      color = r | g | b;  // 5, 6, 5
+      buff[k] = color;
+    }
+  }
+
+  tft.drawRGBBitmap(0, 0, buff, w, h);
+
+  free(buff);
+  
   Serial.printf("draw done!\n");
 }
 
@@ -152,8 +143,8 @@ void setup() {
 
   // Use this initializer if using a 1.8" TFT screen:
   tft.initR(INITR_BLACKTAB);      // Init ST7735S chip, black tab
-  tft.fillScreen(ST77XX_BLACK);
   tft.setRotation(1);
+  tft.fillScreen(ST77XX_BLACK);
 
   tft.setCursor(0, 0);
   tft.setTextSize(1);
@@ -190,25 +181,24 @@ void setup() {
   config.xclk_freq_hz = 20000000;
   //config.frame_size = FRAMESIZE_UXGA;
   //config.pixel_format = PIXFORMAT_JPEG; // for streaming
-  config.frame_size = FRAMESIZE_96X96;
-  //config.pixel_format = PIXFORMAT_RGB565;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
+  //config.frame_size = FRAMESIZE_240X240;
+  config.pixel_format = PIXFORMAT_GRAYSCALE;
+  config.grab_mode = CAMERA_GRAB_LATEST; // CAMERA_GRAB_WHEN_EMPTY;
+  config.fb_location = CAMERA_FB_IN_PSRAM;  
   config.jpeg_quality = 12;
   config.fb_count = 1;
 
-//    FRAMESIZE_96X96,    // 96x96
-//    FRAMESIZE_QQVGA,    // 160x120
 //    FRAMESIZE_240X240,  // 240x240
 //    FRAMESIZE_QVGA,     // 320x240
 
 //    PIXFORMAT_RGB565,    // 2BPP/RGB565
 //    PIXFORMAT_YUV422,    // 2BPP/YUV422
 //    PIXFORMAT_GRAYSCALE, // 1BPP/GRAYSCALE
-//    PIXFORMAT_JPEG,      // JPEG/COMPRESSED
-//    PIXFORMAT_RGB888,    // 3BPP/RGB888 <-- This format is not supported.
     
+  // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
+  //                      for larger pre-allocated frame buffer.
+  // Best option for face detection/recognition
+  config.frame_size = FRAMESIZE_96X96; // FRAMESIZE_240X240;
 #if CONFIG_IDF_TARGET_ESP32S3
   config.fb_count = 2;
 #endif
@@ -221,13 +211,12 @@ void setup() {
   }
   
   camera_sign = true; // Camera initialization check passes
-
-  action_capture = false;
-  //pinMode(BTN_CAPTURE, INPUT);
-  //pinMode(BTN_CAPTURE, INPUT_PULLDOWN);
-  //attachInterrupt(digitalPinToInterrupt(BTN_CAPTURE), do_capture, RISING);
   
-  ei_sleep(2000);
+  action_capture = true;
+  //pinMode(BTN_CAPTURE, INPUT);
+  pinMode(BTN_CAPTURE, INPUT_PULLDOWN);
+  attachInterrupt(digitalPinToInterrupt(BTN_CAPTURE), do_capture, RISING);
+  
   tft.fillScreen(ST77XX_BLACK);
   tft.setCursor(0, 0);
   tft.setTextSize(1);
@@ -238,29 +227,47 @@ void setup() {
   init_done = true;
 }
 
-//void do_capture(){
-//  action_capture = true;
-//}
+void do_capture(){
+    // Serial.println("\nChange action_capture flag...");
+    action_capture = true;
+    // Serial.println("\nDone action_capture flag...");
+}
 
 void loop() {
-  //if(init_done && camera_sign && action_capture){
-  if(init_done && camera_sign){
-    Serial.println("\nPicture Capture Command is sent");
+  if(init_done && camera_sign && action_capture){
+    delay(3000);
+    Serial.print("\nPicture Capture Command is sent...");
+    Serial.println(imageCount);
     
     snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
-    // check if allocation was successful
     if(snapshot_buf == nullptr) {
         ei_printf("ERR: Failed to allocate snapshot buffer!\n");
         return;
     }
 
     capture_photo();
-    tft.setCursor(0, 121);
-    tft.print("done_capture...");
     Serial.println("capture_photo()");
-    free(snapshot_buf);
 
+    free(snapshot_buf);
     imageCount++;
-    action_capture = false;
+    action_capture = true;
   }
+}
+
+static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr)
+{
+    size_t pixel_ix = offset * 1;
+    size_t pixels_left = length;
+    size_t out_ptr_ix = 0;
+
+    while (pixels_left != 0) {
+        out_ptr[out_ptr_ix] = snapshot_buf[pixel_ix];
+
+        // go to the next pixel
+        out_ptr_ix++;
+        pixel_ix++;
+        pixels_left--;
+    }
+    // and done!
+    return 0;
 }
