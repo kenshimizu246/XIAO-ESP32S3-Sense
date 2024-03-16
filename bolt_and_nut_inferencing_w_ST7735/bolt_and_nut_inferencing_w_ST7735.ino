@@ -9,7 +9,8 @@
 #include "SPI.h"
 #include <WiFi.h>
 
-#include <Screw_inferencing.h>
+//#include <Screw_inferencing.h>
+#include <bolt_and_nut_inferencing.h>
 #include "edge-impulse-sdk/dsp/image/image.hpp"
 
 #define CAMERA_MODEL_XIAO_ESP32S3 // Has PSRAM
@@ -44,9 +45,6 @@ volatile bool init_done = false; // needs volatile in the interruption.
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
 uint8_t *snapshot_buf; //points to the output of the capture
-
-const char* ssid = "Buffalo-G-B0D0";
-const char* password = "8sffxaix8cxdi";
 
 WiFiServer server(80);
 
@@ -206,7 +204,7 @@ void setup() {
   // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
   //                      for larger pre-allocated frame buffer.
   // Best option for face detection/recognition
-  config.frame_size = FRAMESIZE_96X96; // FRAMESIZE_240X240;
+  config.frame_size = FRAMESIZE_96X96; // FRAMESIZE_240X240; //FRAMESIZE_96X96;
 #if CONFIG_IDF_TARGET_ESP32S3
   config.fb_count = 2;
 #endif
