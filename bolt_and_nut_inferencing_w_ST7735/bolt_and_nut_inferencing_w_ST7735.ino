@@ -32,14 +32,15 @@
 // For 1.44" and 1.8" TFT with ST7735 use:
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
-const uint16_t imageWidth = 96;
-const uint16_t imageHeight = 96;
+const uint16_t imgModelWidth = EI_CAMERA_RAW_FRAME_BUFFER_COLS;
+const uint16_t imgModelHeight = EI_CAMERA_RAW_FRAME_BUFFER_ROWS;
+
+const uint16_t imgWidth = 240;
+const uint16_t imgHeight = 240;
 
 unsigned long lastCaptureTime = 0; // Last shooting time
 int imageCount = 1;                // File Counter
 bool camera_sign = false;          // Check camera status
-uint32_t buff_size = 0;
-uint16_t * buff = NULL;
 bool action_capture = false;
 volatile bool init_done = false; // needs volatile in the interruption.
 
@@ -59,16 +60,21 @@ void capture_photo() {
     Serial.println("Failed to get camera frame buffer");
     return;
   }
+
+  ei_printf("fb->width:%d, fb->height:%d\n", fb->width, fb->height);
+
+  ei::image::processing::resize_image(fb->buf, fb->width, fb->height, snapshot_buf, imgModelWidth, imgModelHeight, 1);
+
+  // int res = ei::image::processing::crop_and_interpolate_image(snapshot_buf, imgModelWidth, imgModelHeight, snapshot_buf, imgModelWidth, imgModelHeight, 1);
+  // if(EIDSP_OK != res){
+  //   Serial.print("crop_and_interpolate_image failed! ");
+  //   Serial.println(res);
+  //   return;
+  // }
   
-  display_photo(fb->buf, fb->len, imageWidth, imageHeight);
+  ei_printf("imgModelWidth:%d, imgModelHeight:%d\n", imgModelWidth, imgModelHeight);
 
-  uint32_t size = EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS;
-  if(fb->len != size){
-    Serial.println("wrong size!");
-    return;
-  }
-
-  memcpy(snapshot_buf, fb->buf, size);
+  display_photo(snapshot_buf, imgModelWidth, imgModelHeight);
 
   // Release image buffer
   esp_camera_fb_return(fb);
@@ -113,11 +119,9 @@ void inferencing(){
 }
 
 // display
-void display_photo(uint8_t * data, size_t len, uint32_t w, uint32_t h){
-  Serial.printf("data len: %d\n", len);
-
-  buff_size = imageWidth * imageHeight * 2;
-  buff = (uint16_t *)malloc(buff_size);
+void display_photo(uint8_t * data, uint32_t w, uint32_t h){
+  uint32_t buff_size = w * h * 2;
+  uint16_t * buff = (uint16_t *)malloc(buff_size);
 
   // b1111100000000000 -> 0xF800 -> 63488
   // b0000011111100000 -> 0x07E0 -> 2016
@@ -204,7 +208,7 @@ void setup() {
   // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
   //                      for larger pre-allocated frame buffer.
   // Best option for face detection/recognition
-  config.frame_size = FRAMESIZE_96X96; // FRAMESIZE_240X240; //FRAMESIZE_96X96;
+  config.frame_size = FRAMESIZE_240X240; // FRAMESIZE_240X240; //FRAMESIZE_96X96;
 #if CONFIG_IDF_TARGET_ESP32S3
   config.fb_count = 2;
 #endif
@@ -241,7 +245,7 @@ void do_capture(){
 
 void loop() {
   if(init_done && camera_sign && action_capture){
-    delay(3000);
+    delay(1000);
     Serial.print("\nPicture Capture Command is sent...");
     Serial.println(imageCount);
     
