@@ -41,7 +41,6 @@ const uint16_t imgHeight = 240;
 unsigned long lastCaptureTime = 0; // Last shooting time
 int imageCount = 1;                // File Counter
 bool camera_sign = false;          // Check camera status
-bool action_capture = false;
 volatile bool init_done = false; // needs volatile in the interruption.
 
 static bool debug_nn = false; // Set this to true to see e.g. features generated from the raw signal
@@ -222,11 +221,6 @@ void setup() {
   
   camera_sign = true; // Camera initialization check passes
   
-  action_capture = true;
-  //pinMode(BTN_CAPTURE, INPUT);
-  pinMode(BTN_CAPTURE, INPUT_PULLDOWN);
-  attachInterrupt(digitalPinToInterrupt(BTN_CAPTURE), do_capture, RISING);
-  
   tft.fillScreen(ST77XX_BLACK);
   tft.setCursor(0, 0);
   tft.setTextSize(1);
@@ -237,14 +231,8 @@ void setup() {
   init_done = true;
 }
 
-void do_capture(){
-    // Serial.println("\nChange action_capture flag...");
-    action_capture = true;
-    // Serial.println("\nDone action_capture flag...");
-}
-
 void loop() {
-  if(init_done && camera_sign && action_capture){
+  if(init_done && camera_sign){
     delay(1000);
     Serial.print("\nPicture Capture Command is sent...");
     Serial.println(imageCount);
@@ -264,7 +252,6 @@ void loop() {
 
     free(snapshot_buf);
     imageCount++;
-    action_capture = true;
   }
 }
 
