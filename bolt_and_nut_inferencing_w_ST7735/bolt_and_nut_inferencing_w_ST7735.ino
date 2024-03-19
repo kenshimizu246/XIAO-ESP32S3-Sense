@@ -253,8 +253,8 @@ void loop() {
     capture_photo();
     Serial.println("capture_photo()");
 
-    // inferencing();
-    // Serial.println("inferencing()");
+    inferencing();
+    Serial.println("inferencing()");
 
     free(snapshot_buf);
     imageCount++;
@@ -263,16 +263,17 @@ void loop() {
 
 static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr)
 {
-    size_t pixel_ix = offset * 1;
+    // we already have a RGB888 buffer, so recalculate offset into pixel index
+    size_t pixel_ix = offset * 3;
     size_t pixels_left = length;
     size_t out_ptr_ix = 0;
 
     while (pixels_left != 0) {
-        out_ptr[out_ptr_ix] = snapshot_buf[pixel_ix];
+        out_ptr[out_ptr_ix] = (snapshot_buf[pixel_ix] << 16) + (snapshot_buf[pixel_ix + 1] << 8) + snapshot_buf[pixel_ix + 2];
 
         // go to the next pixel
         out_ptr_ix++;
-        pixel_ix++;
+        pixel_ix+=3;
         pixels_left--;
     }
     // and done!
