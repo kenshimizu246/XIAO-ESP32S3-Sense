@@ -25,9 +25,9 @@
 
 #define BTN_CAPTURE 4
 
-#define EI_CAMERA_RAW_FRAME_BUFFER_COLS           96
-#define EI_CAMERA_RAW_FRAME_BUFFER_ROWS           96
-#define EI_CAMERA_FRAME_BYTE_SIZE                 1
+#define EI_CAMERA_RAW_FRAME_BUFFER_COLS           240
+#define EI_CAMERA_RAW_FRAME_BUFFER_ROWS           240
+#define EI_CAMERA_FRAME_BYTE_SIZE                 3
 
 // For 1.44" and 1.8" TFT with ST7735 use:
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
@@ -62,21 +62,56 @@ void capture_photo() {
 
   ei_printf("fb->width:%d, fb->height:%d\n", fb->width, fb->height);
 
-  ei::image::processing::resize_image(fb->buf, fb->width, fb->height, snapshot_buf, imgModelWidth, imgModelHeight, 1);
-
-  // int res = ei::image::processing::crop_and_interpolate_image(snapshot_buf, imgModelWidth, imgModelHeight, snapshot_buf, imgModelWidth, imgModelHeight, 1);
-  // if(EIDSP_OK != res){
-  //   Serial.print("crop_and_interpolate_image failed! ");
-  //   Serial.println(res);
-  //   return;
-  // }
-  
-  ei_printf("imgModelWidth:%d, imgModelHeight:%d\n", imgModelWidth, imgModelHeight);
-
-  display_photo(snapshot_buf, imgModelWidth, imgModelHeight);
+  bool converted = fmt2rgb888(fb->buf, fb->len, PIXFORMAT_JPEG, snapshot_buf);
 
   // Release image buffer
   esp_camera_fb_return(fb);
+
+  ei::image::processing::crop_and_interpolate_rgb888(
+        snapshot_buf,
+        EI_CAMERA_RAW_FRAME_BUFFER_COLS,
+        EI_CAMERA_RAW_FRAME_BUFFER_ROWS,
+        snapshot_buf,
+        EI_CLASSIFIER_INPUT_WIDTH,
+        EI_CLASSIFIER_INPUT_HEIGHT);
+
+  display_photo(snapshot_buf, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT);
+}
+
+// display
+void display_photo(uint8_t * data, uint32_t w, uint32_t h){
+  uint32_t buff_size = w * h * 2;
+
+  ei_printf("start display_photo()!\n");
+
+  uint16_t * buff = (uint16_t *)malloc(buff_size);
+
+  // b1111100000000000 -> 0xF800 -> 63488
+  // b0000011111100000 -> 0x07E0 -> 2016
+  // b0000000000011111 -> 0x001F -> 31
+  // b1111111111111111 -> 0xFFFF -> 65535
+  uint32_t x = 0, y = 0, k, j = 0;
+  uint16_t rgb = 0;
+  uint16_t c, r, g, b;
+  for(uint32_t y = 0; y < h; y++){
+    for(uint32_t x = 0; x < w; x++){
+      k = (y * w) + x;
+      j = k * 3;
+      r = data[j];
+      g = data[j + 1];
+      b = data[j + 2];
+
+      rgb = ((r & 0b11111000) << 8) | ((g & 0b11111100) << 3) | (b >> 3);
+
+      buff[k] = rgb;
+    }
+  }
+
+  tft.drawRGBBitmap(0, 0, buff, w, h);
+
+  free(buff);
+  
+  ei_printf("draw done!\n");
 }
 
 void inferencing(){
@@ -115,36 +150,6 @@ void inferencing(){
   }
 
   Serial.println("Photo saved to file");
-}
-
-// display
-void display_photo(uint8_t * data, uint32_t w, uint32_t h){
-  uint32_t buff_size = w * h * 2;
-  uint16_t * buff = (uint16_t *)malloc(buff_size);
-
-  // b1111100000000000 -> 0xF800 -> 63488
-  // b0000011111100000 -> 0x07E0 -> 2016
-  // b0000000000011111 -> 0x001F -> 31
-  // b1111111111111111 -> 0xFFFF -> 65535
-  uint32_t x = 0, y = 0, k, j = 0;
-  uint16_t color = 0;
-  uint16_t c, r, g, b;
-  for(uint32_t y = 0; y < h; y++){
-    for(uint32_t x = 0; x < w; x++){
-      k = (y * w) + x;
-      b = (data[k] >> 3) & 0x1F;
-      g = b << (5 + 1); // 5 + 1 because green has 6 bits instead of others like 5 bits.
-      r = b << (5 + 6);
-      color = r | g | b;  // 5, 6, 5
-      buff[k] = color;
-    }
-  }
-
-  tft.drawRGBBitmap(0, 0, buff, w, h);
-
-  free(buff);
-  
-  Serial.printf("draw done!\n");
 }
 
 void setup() {
@@ -191,7 +196,7 @@ void setup() {
   //config.frame_size = FRAMESIZE_UXGA;
   //config.pixel_format = PIXFORMAT_JPEG; // for streaming
   //config.frame_size = FRAMESIZE_240X240;
-  config.pixel_format = PIXFORMAT_GRAYSCALE;
+  config.pixel_format = PIXFORMAT_JPEG; // PIXFORMAT_GRAYSCALE;
   config.grab_mode = CAMERA_GRAB_LATEST; // CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;  
   config.jpeg_quality = 12;
@@ -234,8 +239,9 @@ void setup() {
 void loop() {
   if(init_done && camera_sign){
     delay(1000);
-    Serial.print("\nPicture Capture Command is sent...");
-    Serial.println(imageCount);
+    // Serial.print("\nPicture Capture Command is sent...");
+    // Serial.println(imageCount);
+    ei_printf("\nPicture Capture Command is sent... %d\n", imageCount);
     
     // allocation must be before capture_photo because it copys picture into the snapshot_buf.
     snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
@@ -247,8 +253,8 @@ void loop() {
     capture_photo();
     Serial.println("capture_photo()");
 
-    inferencing();
-    Serial.println("inferencing()");
+    // inferencing();
+    // Serial.println("inferencing()");
 
     free(snapshot_buf);
     imageCount++;
