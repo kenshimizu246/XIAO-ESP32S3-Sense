@@ -118,6 +118,8 @@ void inferencing(){
   ei::signal_t signal;
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT;
   signal.get_data = &ei_camera_get_data;
+  uint8_t tline = 0;
+  char text[24];
 
   ei_impulse_result_t result = { 0 };
 
@@ -130,7 +132,21 @@ void inferencing(){
   ei_printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n",
             result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
-  uint8_t tline = 0;
+  sprintf(text, "DSP: %d", result.timing.dsp);
+  tft.setCursor(96,tline);
+  tft.print(text);
+  tline += 10;
+
+  sprintf(text, "CLS: %d", result.timing.classification);
+  tft.setCursor(96,tline);
+  tft.print(text);
+  tline += 10;
+
+  sprintf(text, "ANM: %d", result.timing.anomaly);
+  tft.setCursor(96,tline);
+  tft.print(text);
+  tline += 15;
+
   bool bb_found = result.bounding_boxes[0].value > 0;
   for (size_t ix = 0; ix < result.bounding_boxes_count; ix++) {
       auto bb = result.bounding_boxes[ix];
@@ -138,7 +154,6 @@ void inferencing(){
           continue;
       }
       ei_printf("    %s (%f) [ x: %u, y: %u, width: %u, height: %u ]\n", bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
-      char text[24];
       sprintf(text, "%s %.02f", bb.label, bb.value);
       tft.setCursor(96,tline);
       tft.print(text);
